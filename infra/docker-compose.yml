@@ -1,0 +1,22 @@
+# Docker target: shop-api + Prometheus. TAG decides which image version runs.
+services:
+  app:
+    image: shop-api:${TAG:-dev}
+    container_name: shop-api
+    ports:
+      - "3001:3000"        # host:container (3000 on host is taken by another project)
+    environment:
+      - APP_VERSION=${TAG:-dev}
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=1d
+    restart: unless-stopped
