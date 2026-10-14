@@ -46,6 +46,7 @@ program.command("deploy <tag>")
       if (d.needsApproval) {
         log(`\n2/4 policy: needs human approval (${d.why})`);
         await notify(`⚠️ *${tag}* needs approval: ${d.why}\n${risk.summary}`);
+        if (opts.yes) log("    approved via --yes");
         const ok = opts.yes || (await askHuman("    deploy anyway?"));
         if (!ok) { db.finish(id, "blocked", d.why); log("✗ blocked by policy, nothing deployed"); return; }
         db.setApproved(id, opts.yes ? "--yes flag" : "terminal");
