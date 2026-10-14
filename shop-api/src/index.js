@@ -42,6 +42,7 @@ const products = [
   { id: 1, name: "Keyboard", price: 1999 },
   { id: 2, name: "Mouse", price: 799 },
   { id: 3, name: "Monitor", price: 12999 },
+  { id: 4, name: "Webcam", price: 2499 },
 ];
 
 app.get("/health", (_req, res) => {
