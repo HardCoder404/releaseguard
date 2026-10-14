@@ -1,0 +1,18 @@
+# ReleaseGuard config. Everything a human would otherwise "just know".
+target: docker                 # docker | k8s (k8s comes on Day 2)
+
+urls:
+  app: http://localhost:3001
+  prometheus: http://localhost:9090
+
+precheck:
+  risk_threshold: 7            # score >= this -> ask a human before deploying
+
+watch:
+  window_seconds: 90           # how long to watch after deploy
+  interval_seconds: 10         # how often to sample
+  rollback_if:
+    error_rate_above: 0.05     # 5% of requests returning 5xx
+    p95_latency_above_ms: 800  # absolute ceiling
+    p95_latency_factor: 3      # or p95 > 3x the pre-deploy baseline
+    health_failures: 2         # consecutive failed /health checks
