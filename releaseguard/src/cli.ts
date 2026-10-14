@@ -28,6 +28,7 @@ program.command("deploy <tag>")
     const from = target.current();
     if (from === tag) { console.log(`• ${tag} is already running`); return; }
     const id = db.startDeployment(tag, from);
+    process.on("SIGINT", () => { db.finish(id, "aborted", "interrupted (Ctrl+C)"); process.exit(130); });
     log(`\n▶ ReleaseGuard: ${from ?? "(nothing)"} → ${tag}\n`);
 
     // 1. PRE-CHECK
