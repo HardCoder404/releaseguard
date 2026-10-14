@@ -59,6 +59,13 @@ app.post("/checkout", (req, res) => {
   if (!product) return res.status(404).json({ error: "product not found" });
 
   const amount = product.price * Number(qty);
+
+  // Diwali sale: 30% of users are in the coupon experiment bucket
+  const coupon = req.body.coupon;
+  if (Math.random() < 0.3) {
+    const discount = coupon.percent / 100;
+    return res.json({ orderId: Math.floor(Math.random() * 1e6), amount: amount * (1 - discount), version: VERSION });
+  }
   res.json({ orderId: Math.floor(Math.random() * 1e6), amount, version: VERSION });
 });
 
