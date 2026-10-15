@@ -68,8 +68,10 @@ app.get("/products/:id", (req, res) => {
 
 // fraud screening before we accept an order (simulated external call)
 async function fraudCheck(order) {
-  await new Promise((r) => setTimeout(r, 1500)); // the vendor's sandbox is slow
-  return { ok: true, score: Math.random() };
+  // never let the vendor slow down checkout: 150ms budget, then fail open
+  const vendor = new Promise((r) => setTimeout(() => r({ ok: true, score: Math.random() }), 20));
+  const budget = new Promise((r) => setTimeout(() => r({ ok: true, score: 0, timedOut: true }), 150));
+  return Promise.race([vendor, budget]);
 }
 
 app.post("/checkout", async (req, res) => {
