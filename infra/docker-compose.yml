@@ -7,6 +7,7 @@ services:
       - "3001:3000"        # host:container (3000 on host is taken by another project)
     environment:
       - APP_VERSION=${TAG:-dev}
+      - PAYMENT_GATEWAY_URL=https://payments.example.internal   # config lives here, not in the image
     restart: unless-stopped
 
   prometheus:

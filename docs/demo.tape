@@ -8,7 +8,7 @@ Set Framerate 12
 Set Theme "Catppuccin Mocha"
 Set TypingSpeed 45ms
 Set Padding 18
-Type "./rg deploy v2.0.0 --traffic --yes"
+Type "./rg deploy v2.3.0 --traffic --yes"
 Sleep 600ms
 Enter
 Sleep 40s
