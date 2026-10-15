@@ -1,15 +1,14 @@
 "use client";
 import Link from "next/link";
-import { useEffect } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { usePoll, fmtTime, resultMeta, type Approval, type Status, type Deployment, type Config } from "@/lib/api";
 import { Shield, Activity, Inbox, History, Sliders, Cube } from "./Icons";
 
 const tabs = [
-  { href: "/", name: "Live", Icon: Activity, key: "1" },
-  { href: "/approvals/", name: "Approvals", Icon: Inbox, key: "2" },
-  { href: "/history/", name: "History", Icon: History, key: "3" },
-  { href: "/policy/", name: "Policy", Icon: Sliders, key: "4" },
+  { href: "/", name: "Live", Icon: Activity },
+  { href: "/approvals/", name: "Approvals", Icon: Inbox },
+  { href: "/history/", name: "History", Icon: History },
+  { href: "/policy/", name: "Policy", Icon: Sliders },
 ] as const;
 
 function ago(iso: string) {
@@ -19,7 +18,6 @@ function ago(iso: string) {
 
 export function Nav() {
   const path = usePathname();
-  const router = useRouter();
   const { data: pending } = usePoll<Approval[]>("/api/approvals", 2000);
   const { data: st } = usePoll<Status>("/api/status", 5000);
   const { data: latest } = usePoll<Deployment | null>("/api/deployments/latest", 3000);
@@ -27,15 +25,6 @@ export function Nav() {
   const n = pending?.length ?? 0;
   const running = !!latest && !latest.result;
   const activeIdx = tabs.findIndex((t) => (t.href === "/" ? path === "/" : path.startsWith(t.href.replace(/\/$/, ""))));
-
-  // keyboard: 1-4 switch tabs
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey || (e.target as HTMLElement)?.tagName === "INPUT") return;
-      const t = tabs.find((x) => x.key === e.key); if (t) router.push(t.href);
-    };
-    window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h);
-  }, [router]);
 
   return (
     <header className="sticky top-0 z-20">
@@ -59,12 +48,11 @@ export function Nav() {
           <nav className="relative ml-2 flex items-center p-1 rounded-2xl bg-panel/80 border border-line">
             <span className="absolute top-1 bottom-1 rounded-xl bg-panel2 border border-line2 shadow-[inset_0_1px_0_rgba(255,255,255,.05)] transition-all duration-300 ease-[cubic-bezier(.2,.7,.2,1)]"
               style={{ width: `calc((100% - 8px) / 4)`, left: `calc(4px + ${Math.max(0, activeIdx)} * ((100% - 8px) / 4))` }} />
-            {tabs.map(({ href, name, Icon, key }, i) => (
-              <Link key={href} href={href} className={`relative z-[1] flex items-center justify-center gap-2 w-[118px] h-9 rounded-xl text-[13px] transition-colors ${i === activeIdx ? "text-fg" : "text-mut hover:text-fg"}`}>
+            {tabs.map(({ href, name, Icon }, i) => (
+              <Link key={href} href={href} className={`relative z-[1] flex items-center justify-center gap-2 w-[112px] h-9 rounded-xl text-[13px] transition-colors ${i === activeIdx ? "text-fg" : "text-mut hover:text-fg"}`}>
                 <Icon className={`w-[15px] h-[15px] ${i === activeIdx ? "text-blue" : ""}`} />
                 {name}
                 {name === "Approvals" && n > 0 && <span className="pill pill-warn py-0.5 px-1.5 ml-0.5 dot-live">{n}</span>}
-                <kbd className="hidden lg:inline text-[9.5px] text-dim mono border border-line rounded px-1 ml-0.5">{key}</kbd>
               </Link>
             ))}
           </nav>
