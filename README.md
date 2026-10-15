@@ -82,6 +82,28 @@ The CLI and the dashboard never talk to each other directly: both read and write
 
 `.github/workflows/precheck.yml` runs the pre-check on every pull request that touches the app and posts the score as a PR comment, so reviewers see the risk before they approve. The deploy/watch/rollback part runs wherever the cluster is reachable.
 
+## Use it on your own service
+
+ReleaseGuard is a CLI you run next to the repository of the service it guards. It is not a SaaS and it does not need to be installed inside your app. Three things are required of the service:
+
+1. **Versions are git tags.** `./rg deploy v1.4.0` means "ship the code at tag v1.4.0". The pre-check diffs the running tag against the new one.
+2. **Two endpoints:** `GET /health` (200 when ready) and `GET /metrics` in Prometheus format with a request counter and a latency histogram. With `prom-client` (Node), `prometheus_client` (Python) or `promhttp` (Go) this is about fifteen lines; `shop-api/src/index.js` is the reference.
+3. **Somewhere to run it** that can swap versions: a Docker Compose service, or a Kubernetes Deployment with a `track: stable` pod label, plus a Prometheus that scrapes it. `k8s/prometheus.yml` is a ready-made in-cluster Prometheus that scrapes any pod carrying a `track` label.
+
+Then:
+
+```bash
+./rg init --name my-api --path services/api     # writes releaseguard/releaseguard.yml
+# edit: urls, compose service or k8s deployment, metric names if yours differ
+./rg doctor                                      # checks every line against git, docker/kubectl, the app and Prometheus
+git tag v1.0.0
+./rg deploy v1.0.0
+```
+
+`doctor` tells you exactly what is missing and how to fix it. Nothing in `scripts/` or `src/` knows the name of your app: image name, folder, Dockerfile, health path, metric names, deployment, namespace and container all come from the config. On Kubernetes the canary Deployment is generated from your stable Deployment at deploy time (1 replica, `track: canary`, new image), so there is no second manifest to maintain.
+
+Local clusters cannot pull from your laptop's Docker daemon, so `scripts/k8s-load-image.sh` loads the image into minikube or kind automatically. For a real cluster, push the image to a registry in your CI and set `RG_SKIP_IMAGE_LOAD=1`.
+
 ## Quick start
 
 Requirements: Docker, Node 22+, a free [Groq](https://console.groq.com) key. For the Kubernetes target: `minikube` and `kubectl`.
@@ -114,6 +136,8 @@ kubectl apply -f k8s/
 |---|---|
 | `./rg deploy <tag> [--yes] [--traffic] [--target docker\|k8s] [--no-canary]` | the full guarded deploy |
 | `./rg precheck <ref> <ref>` | risk analysis only, prints markdown (used by CI) |
+| `./rg init --name <app> --path <dir>` | starter config for your own service |
+| `./rg doctor` | checks the config against git, docker/kubectl, the app and Prometheus |
 | `./rg status` | what is running, current metrics |
 | `./rg rollback` | manual rollback |
 | `./rg history` | audit log in the terminal |
@@ -123,8 +147,10 @@ kubectl apply -f k8s/
 
 ```yaml
 # releaseguard/releaseguard.yml
+app: { name: shop-api, path: shop-api, dockerfile: shop-api/Dockerfile, health_path: /health }
+metrics: { requests_total: http_requests_total, duration_bucket: http_request_duration_seconds_bucket, status_label: status, track_label: track }
 target: k8s
-k8s: { deployment: shop-api, namespace: default, canary: true }
+k8s: { deployment: shop-api, namespace: default, container: app, canary: true }
 precheck:
   risk_threshold: 7
   require_approval_if: [migration, env_change]
@@ -145,9 +171,8 @@ watch:
 releaseguard/
 ├── shop-api/            demo app: Express + prom-client, the thing being deployed
 ├── infra/               docker-compose (app + Prometheus) for the docker target
-├── k8s/                 Deployment, Service, canary Deployment, ConfigMap,
-│                        Prometheus with kubernetes_sd (finds pods by label)
-├── scripts/             build from a git tag, deploy / rollback / canary, traffic
+├── k8s/                 demo Deployment + Service, ConfigMap, generic in-cluster Prometheus
+├── scripts/             env-driven: build from a git tag, deploy / rollback / canary (manifest generated), image load, traffic
 ├── releaseguard/src/
 │   ├── cli.ts           the flow: precheck → gate → canary|deploy → watch → promote|revert
 │   ├── precheck.ts      diff → heuristics + LLM → risk JSON
@@ -155,6 +180,7 @@ releaseguard/
 │   ├── metrics.ts       2 PromQL queries + health, scoped to canary or stable
 │   ├── watch.ts         baseline vs now, the actual decision
 │   ├── targets/         docker.ts, k8s.ts: same interface, different kubectl/docker calls
+│   ├── doctor.ts        `rg doctor`: config vs reality
 │   ├── explain.ts       numbers + diff + pod logs → incident note
 │   ├── notify.ts        Slack webhook
 │   ├── db.ts            SQLite: audit log, live events, approvals (node:sqlite, no native deps)
@@ -177,7 +203,7 @@ Stack: TypeScript, Node, Next.js, Docker, Kubernetes (minikube), Prometheus, Gro
 
 - Single cluster, single deployment. Multi-service releases would need a dependency order.
 - The canary share is "1 pod out of N", not a precise traffic percentage. A service mesh or ingress weights would make it exact.
-- The LLM sees the diff of one folder. A real repo would need a path filter per service.
+- The LLM sees the diff of one folder (`app.path`). A monorepo with several services needs one config per service.
 - No GitHub webhook that triggers the deploy itself; CI runs the pre-check, the deploy is a CLI call where the cluster is.
 
 ## Author

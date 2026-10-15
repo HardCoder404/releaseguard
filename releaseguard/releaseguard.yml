@@ -1,14 +1,32 @@
 # ReleaseGuard config. Everything a human would otherwise "just know".
+# Run `./rg doctor` after editing: it checks every line below against the real world.
+
+app:
+  name: shop-api               # image name (<name>:<tag>) and the default k8s deployment name
+  path: shop-api               # folder in this repo that gets built and diffed (relative to repo root)
+  dockerfile: shop-api/Dockerfile
+  health_path: /health         # must return 200 when the app can take traffic
+  description: "a small e-commerce API (products, checkout)"   # one line of context for the risk model
+
+metrics:                       # names your app exposes on /metrics (prom-client / prometheus_client defaults shown)
+  requests_total: http_requests_total                     # counter with a status label
+  duration_bucket: http_request_duration_seconds_bucket   # histogram buckets
+  status_label: status
+  track_label: track           # added by Prometheus from the pod label, separates canary from stable
+
 target: k8s                    # docker | k8s   (override per run: --target docker)
 
 docker:
+  compose_file: infra/docker-compose.yml
+  service: app                 # compose service that runs the app
   urls:
     app: http://127.0.0.1:3001
     prometheus: http://127.0.0.1:9090
 
 k8s:
-  deployment: shop-api
+  deployment: shop-api         # the stable Deployment (pod labels must include track: stable)
   namespace: default
+  container: app               # container name inside the pod
   canary: true                 # new version goes to 1 extra pod first; --no-canary for a plain rolling update
   urls:
     app: http://127.0.0.1:30080
@@ -27,5 +45,5 @@ watch:
     error_rate_above: 0.05     # 5% of requests returning 5xx
     p95_latency_above_ms: 800
     p95_latency_factor: 3      # or p95 > 3x the pre-deploy baseline
-    health_failures: 2         # consecutive failed /health checks
+    health_failures: 2         # consecutive failed health checks
     pod_restarts_above: 1      # k8s only: container restarts since deploy

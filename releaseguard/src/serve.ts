@@ -52,7 +52,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     return json(res, ok ? 200 : 409, { ok, status: ok ? a[2] : "already decided" }), true;
   }
 
-  if (p === "/api/config" && req.method === "GET") { const c = loadConfig(); return json(res, 200, { target: c.target, k8s: { canary: c.k8s.canary, deployment: c.k8s.deployment }, precheck: c.precheck, watch: c.watch }), true; }
+  if (p === "/api/config" && req.method === "GET") { const c = loadConfig(); return json(res, 200, { target: c.target, app: c.app, k8s: { canary: c.k8s.canary, deployment: c.k8s.deployment, namespace: c.k8s.namespace }, precheck: c.precheck, watch: c.watch }), true; }
   if (p === "/api/config" && req.method === "PUT") {
     try { const c = saveConfig(JSON.parse(await readBody(req))); return json(res, 200, { ok: true, precheck: c.precheck, watch: c.watch, k8s: { canary: c.k8s.canary } }), true; }
     catch (e) { return json(res, 400, { error: (e as Error).message }), true; }

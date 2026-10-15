@@ -1,4 +1,4 @@
-# In-cluster Prometheus. Discovers shop-api pods by label and scrapes them.
+# In-cluster Prometheus. Scrapes any pod with a `track` label on its `http` port.
 apiVersion: v1
 kind: ServiceAccount
 metadata: { name: prometheus }
@@ -29,11 +29,12 @@ data:
         kubernetes_sd_configs:
           - role: pod
         relabel_configs:
-          - source_labels: [__meta_kubernetes_pod_label_app]
-            regex: shop-api
+          # scrape every pod that carries a `track` label (stable or canary), whatever the app is called
+          - source_labels: [__meta_kubernetes_pod_label_track]
+            regex: .+
             action: keep
-          - source_labels: [__meta_kubernetes_pod_container_port_number]
-            regex: "3000"
+          - source_labels: [__meta_kubernetes_pod_container_port_name]
+            regex: http
             action: keep
           - source_labels: [__meta_kubernetes_pod_name]
             target_label: pod

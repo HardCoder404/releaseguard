@@ -15,8 +15,8 @@ export interface Risk {
 const SYSTEM = `You are a release engineer reviewing a diff before production deploy.
 Score risk 1-10:
 1-3: copy/UI/comment changes, no logic.
-4-6: contained logic change (one route/function), no schema/env/dependency change. Input validation that returns 4xx, new optional fields, new read-only endpoints belong here even in checkout/auth.
-7-10: database migration, env var change, dependency upgrade, error handling removed, new external/network calls in a request path, changes to how money is computed or how auth decides, anything that can throw on existing requests or raise latency.
+4-6: contained logic change (one route/function), no schema/env/dependency change. Input validation that returns 4xx, new optional fields, new read-only endpoints belong here even on critical paths.
+7-10: database migration, env var change, dependency upgrade, error handling removed, new external/network calls in a request path, changes to money/auth/data-integrity logic, anything that can throw on existing requests or raise latency.
 Be concrete: cite file names and what changed. Respond ONLY with JSON:
 {"score":n,"summary":"...","reasons":["..."],"has_migration":bool,"has_env_change":bool,"has_dependency_change":bool,"watch_closely":["/route",...]}`;
 
@@ -32,17 +32,17 @@ function heuristics(d: Diff) {
   };
 }
 
-export async function precheck(from: string | null, to: string): Promise<{ risk: Risk; diff: Diff }> {
-  const diff = diffBetween(from, to);
+export async function precheck(from: string | null, to: string, app: { path: string; description: string }): Promise<{ risk: Risk; diff: Diff }> {
+  const diff = diffBetween(from, to, app.path);
   if (from && diff.files.length === 0) {
     return {
       diff,
-      risk: { score: 1, summary: "No application code changed between versions.", reasons: ["diff is empty for shop-api/"],
+      risk: { score: 1, summary: "No application code changed between versions.", reasons: [`diff is empty for ${app.path}/`],
         has_migration: false, has_env_change: false, has_dependency_change: false, watch_closely: [] },
     };
   }
   const h = heuristics(diff);
-  const user = `Deploying ${from ?? "(nothing)"} -> ${to}
+  const user = `Deploying ${from ?? "(nothing)"} -> ${to}${app.description ? ` of ${app.description}` : ""}
 
 Commits:
 ${diff.commits}

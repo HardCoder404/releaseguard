@@ -27,19 +27,21 @@ async function promQL(base: string, q: string): Promise<number | null> {
 
 export async function sample(cfg: Config, scope: Scope): Promise<Sample> {
   const p = cfg.urls.prometheus;
-  const sel = scope.selector ? `{${scope.selector}}` : "";
-  const selErr = scope.selector ? `{${scope.selector},status=~"5.."}` : `{status=~"5.."}`;
+  const m = cfg.metrics;
+  const selector = scope.track ? `${m.track_label}="${scope.track}"` : "";
+  const sel = selector ? `{${selector}}` : "";
+  const selErr = selector ? `{${selector},${m.status_label}=~"5.."}` : `{${m.status_label}=~"5.."}`;
   const [rps, err5xx, p95] = await Promise.all([
-    promQL(p, `sum(rate(http_requests_total${sel}[${WINDOW}]))`),
-    promQL(p, `sum(rate(http_requests_total${selErr}[${WINDOW}]))`),
-    promQL(p, `histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket${sel}[${WINDOW}])) by (le))`),
+    promQL(p, `sum(rate(${m.requests_total}${sel}[${WINDOW}]))`),
+    promQL(p, `sum(rate(${m.requests_total}${selErr}[${WINDOW}]))`),
+    promQL(p, `histogram_quantile(0.95, sum(rate(${m.duration_bucket}${sel}[${WINDOW}])) by (le))`),
   ]);
   let pods: PodHealth | undefined;
   if (scope.pods) { try { pods = scope.pods(); } catch { /* cluster unreachable: health check covers it */ } }
   // /health goes through the Service, so it may land on any pod. For k8s scopes pod readiness is the real health signal.
   let healthy = false, version: string | null = null;
   try {
-    const r = await fetch(`${cfg.urls.app}/health`, { signal: AbortSignal.timeout(2000) });
+    const r = await fetch(`${cfg.urls.app}${cfg.app.health_path}`, { signal: AbortSignal.timeout(2000) });
     healthy = r.ok;
     version = ((await r.json()) as { version?: string }).version ?? null;
   } catch { healthy = false; }

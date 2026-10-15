@@ -2,7 +2,9 @@
 import { Command } from "commander";
 import { spawn } from "node:child_process";
 import path from "node:path";
-import { loadConfig, ROOT, type Config } from "./config.js";
+import { loadConfig, ROOT, CONFIG_FILE, type Config } from "./config.js";
+import { doctor } from "./doctor.js";
+import fs from "node:fs";
 import { tagExists, type Diff } from "./git.js";
 import { precheck, type Risk } from "./precheck.js";
 import { evaluate, askHuman } from "./policy.js";
@@ -50,7 +52,7 @@ program.command("deploy <tag>")
     if (!opts.skipPrecheck) {
       step(id, 1, "Pre-check", "active", "reading the diff");
       log("1/4 pre-check: reading the diff...");
-      ({ risk, diff } = await precheck(from, tag));
+      ({ risk, diff } = await precheck(from, tag, cfg.app));
       db.saveRisk(id, risk.score, risk.summary, risk.reasons);
       log(`    risk ${risk.score}/10  ${risk.summary}`);
       for (const r of risk.reasons) log(`    - ${r}`);
@@ -216,7 +218,7 @@ program.command("precheck <from> <to>")
   .option("--json", "print raw JSON")
   .action(async (from: string, to: string, o: { json?: boolean }) => {
     const cfg = loadConfig();
-    const { risk, diff } = await precheck(from, to);
+    const { risk, diff } = await precheck(from, to, cfg.app);
     if (o.json) return console.log(JSON.stringify({ risk, files: diff.files }, null, 2));
     const d = evaluate(cfg, risk);
     const badge = risk.score >= cfg.precheck.risk_threshold ? "🔴" : risk.score >= 4 ? "🟡" : "🟢";
@@ -225,7 +227,7 @@ program.command("precheck <from> <to>")
     if (flags.length) out.push(`\nFlags: ${flags.join(", ")}`);
     if (risk.watch_closely?.length) out.push(`\nWatch closely after deploy: ${risk.watch_closely.map((w) => `\`${w}\``).join(", ")}`);
     out.push(`\n${d.needsApproval ? `⚠️ Deploy will **pause for human approval** (${d.why}).` : "✅ Deploy will proceed without manual approval."}`);
-    out.push(`\n<sub>${diff.files.length} file(s) in shop-api/ changed · ${from.slice(0, 12)} → ${to.slice(0, 12)}</sub>`);
+    out.push(`\n<sub>${diff.files.length} file(s) in ${diff.path}/ changed · ${from.slice(0, 12)} → ${to.slice(0, 12)}</sub>`);
     console.log(out.join("\n"));
   });
 
@@ -236,6 +238,66 @@ program.command("serve")
     const { serve } = await import("./serve.js");
     serve(Number(o.port));
   });
+
+program.command("doctor")
+  .description("check this config against git, docker/kubectl, the app and Prometheus; tells you what is missing")
+  .option("--target <name>")
+  .action(async (o: { target?: string }) => { const ok = await doctor(loadConfig(o.target)); process.exit(ok ? 0 : 1); });
+
+program.command("init")
+  .description("write a starter releaseguard.yml for your own service (does not overwrite an existing one)")
+  .option("--name <name>", "app / image / deployment name", "my-api")
+  .option("--path <path>", "folder of the app inside this repo", ".")
+  .action((o: { name: string; path: string }) => {
+    if (fs.existsSync(CONFIG_FILE)) { console.log(`${CONFIG_FILE} already exists. Edit it, then run ./rg doctor.`); return; }
+    fs.writeFileSync(CONFIG_FILE, starterConfig(o.name, o.path));
+    console.log(`wrote ${CONFIG_FILE}\n\nNext:\n  1. expose GET /health and GET /metrics (prom-client) in your app\n  2. put GROQ_API_KEY in .env\n  3. git tag v1.0.0\n  4. ./rg doctor`);
+  });
+
+function starterConfig(name: string, p: string) {
+  return `# ReleaseGuard config for ${name}. Run \`./rg doctor\` after editing.
+app:
+  name: ${name}
+  path: ${p}
+  dockerfile: ${p === "." ? "Dockerfile" : p + "/Dockerfile"}
+  health_path: /health
+  description: ""
+
+metrics:
+  requests_total: http_requests_total
+  duration_bucket: http_request_duration_seconds_bucket
+  status_label: status
+  track_label: track
+
+target: docker
+
+docker:
+  compose_file: docker-compose.yml
+  service: ${name}
+  urls: { app: http://127.0.0.1:3000, prometheus: http://127.0.0.1:9090 }
+
+k8s:
+  deployment: ${name}
+  namespace: default
+  container: ${name}
+  canary: true
+  urls: { app: http://127.0.0.1:30080, prometheus: http://127.0.0.1:30090 }
+
+precheck:
+  risk_threshold: 7
+  require_approval_if: [migration, env_change]
+
+watch:
+  window_seconds: 120
+  interval_seconds: 10
+  rollback_if:
+    error_rate_above: 0.05
+    p95_latency_above_ms: 800
+    p95_latency_factor: 3
+    health_failures: 2
+    pod_restarts_above: 1
+`;
+}
 
 program.command("rollback").description("manual rollback to previous version").option("--target <name>").action(async (o: { target?: string }) => {
   const t = pickTarget(loadConfig(o.target)); const out = t.rollback(); console.log(out); await notify(`↩️ manual: ${out}`);

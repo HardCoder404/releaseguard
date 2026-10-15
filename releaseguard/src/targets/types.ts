@@ -4,7 +4,7 @@ export interface PodHealth { ready: number; desired: number; restarts: number }
 /** What the watcher looks at: which pods' metrics, and whose health. */
 export interface Scope {
   label: string;                  // for logs: "canary", "stable", "app"
-  selector: string;               // PromQL label matcher, e.g. 'track="canary"' or ""
+  track: string;                  // value of the track label to query ("canary" | "stable"), "" = everything
   pods?: () => PodHealth;         // orchestrator-level health for this scope
 }
 
