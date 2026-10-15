@@ -47,7 +47,7 @@ program.command("deploy <tag>")
       const d = evaluate(cfg, risk);
       if (d.needsApproval) {
         log(`\n2/4 policy: needs human approval (${d.why})`);
-        await notify(`⚠️ *${tag}* needs approval: ${d.why}\n${risk.summary}`);
+        await notify(`⚠️ *${tag}* needs approval (risk ${risk.score}/10, ${d.why})\n${risk.summary}\n${risk.reasons.map((r) => `• ${r}`).join("\n")}`);
         if (opts.yes) log("    approved via --yes");
         const ok = opts.yes || (await askHuman("    deploy anyway?"));
         if (!ok) { db.finish(id, "blocked", d.why); log("✗ blocked by policy, nothing deployed"); return; }
@@ -77,7 +77,7 @@ program.command("deploy <tag>")
         return;
       }
       log(`    ${deployOut}`);
-      await notify(`🚀 deploying *${tag}* (risk ${risk?.score ?? "-"}/10). Watching for ${cfg.watch.window_seconds}s...`);
+      await notify(`🚀 *${tag}* deployed on ${target.name} (risk ${risk?.score ?? "-"}/10, was ${from ?? "nothing"}). Watching for ${cfg.watch.window_seconds}s...`);
       await sleep(3000); // let the container boot and Prometheus scrape once
 
       // 4. WATCH
@@ -86,7 +86,8 @@ program.command("deploy <tag>")
       if (v.ok) {
         db.finish(id, "live", v.reason, v.samples);
         log(`\n✅ ${tag} is live (${v.reason})`);
-        await notify(`✅ *${tag}* is live. ${v.reason}.`);
+        const last = v.samples.at(-1);
+        await notify(`✅ *${tag}* is live on ${target.name}. ${v.reason}. err ${((last?.errorRate ?? 0) * 100).toFixed(1)}%, p95 ${last?.p95ms ?? "-"}ms.`);
       } else {
         log(`\n🔴 regression detected: ${v.reason}`);
         log(`    ${target.rollback()}`);
@@ -94,7 +95,7 @@ program.command("deploy <tag>")
         const why = diff ? await explainRollback(from ?? "none", tag, diff, v, diag) : `Rolled back: ${v.reason}`;
         db.finish(id, "rolled_back", why, v.samples);
         log(`\n${why}\n`);
-        await notify(`🔴 *Rolled back ${tag} → ${from}* (auto)\n${why}`);
+        await notify(`🔴 *Rolled back ${tag} → ${from}* on ${target.name} (auto, ${v.reason})\n${why}`);
       }
     } finally { traffic?.kill(); }
   });
