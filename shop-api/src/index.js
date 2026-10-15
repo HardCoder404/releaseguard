@@ -8,6 +8,13 @@ app.use(express.json());
 const VERSION = process.env.APP_VERSION || "dev";
 const PORT = process.env.PORT || 3000;
 
+// payments now go through the gateway, must be configured per environment
+const PAYMENT_GATEWAY_URL = process.env.PAYMENT_GATEWAY_URL;
+if (!PAYMENT_GATEWAY_URL) {
+  console.error("FATAL: PAYMENT_GATEWAY_URL is not set");
+  process.exit(1);
+}
+
 // ---------- metrics (what Prometheus scrapes) ----------
 const registry = new client.Registry();
 client.collectDefaultMetrics({ register: registry });
