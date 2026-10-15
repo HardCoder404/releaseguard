@@ -1,5 +1,6 @@
 // two PromQL queries + a health probe.
 import type { Config } from "./config.js";
+import type { Target, PodHealth } from "./targets/types.js";
 
 export interface Sample {
   at: string;
@@ -8,6 +9,7 @@ export interface Sample {
   p95ms: number | null;    // null when no traffic yet
   healthy: boolean;
   version: string | null;
+  pods?: PodHealth;        // k8s only
 }
 
 const WINDOW = "30s";
@@ -21,7 +23,7 @@ async function promQL(base: string, q: string): Promise<number | null> {
   return Number.isFinite(n) ? n : null;
 }
 
-export async function sample(cfg: Config): Promise<Sample> {
+export async function sample(cfg: Config, target?: Target): Promise<Sample> {
   const p = cfg.urls.prometheus;
   const [rps, err5xx, p95] = await Promise.all([
     promQL(p, `sum(rate(http_requests_total[${WINDOW}]))`),
@@ -34,8 +36,11 @@ export async function sample(cfg: Config): Promise<Sample> {
     healthy = r.ok;
     version = ((await r.json()) as { version?: string }).version ?? null;
   } catch { healthy = false; }
+  let pods: PodHealth | undefined;
+  if (target?.pods) { try { pods = target.pods(); } catch { /* cluster unreachable: health check covers it */ } }
   const total = rps ?? 0;
   return {
+    pods,
     at: new Date().toISOString(),
     rps: total,
     errorRate: total > 0 ? (err5xx ?? 0) / total : 0,

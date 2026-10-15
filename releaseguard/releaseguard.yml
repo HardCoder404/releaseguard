@@ -1,18 +1,30 @@
 # ReleaseGuard config. Everything a human would otherwise "just know".
-target: docker                 # docker | k8s (k8s comes on Day 2)
+target: k8s                    # docker | k8s   (override per run: --target docker)
 
-urls:
-  app: http://localhost:3001
-  prometheus: http://localhost:9090
+docker:
+  urls:
+    app: http://localhost:3001
+    prometheus: http://localhost:9090
+
+k8s:
+  deployment: shop-api
+  namespace: default
+  urls:
+    app: http://localhost:30080
+    prometheus: http://localhost:30090
 
 precheck:
   risk_threshold: 7            # score >= this -> ask a human before deploying
+  require_approval_if:         # hard rules, regardless of score
+    - migration
+    - env_change
 
 watch:
-  window_seconds: 90           # how long to watch after deploy
-  interval_seconds: 10         # how often to sample
+  window_seconds: 90
+  interval_seconds: 10
   rollback_if:
     error_rate_above: 0.05     # 5% of requests returning 5xx
-    p95_latency_above_ms: 800  # absolute ceiling
+    p95_latency_above_ms: 800
     p95_latency_factor: 3      # or p95 > 3x the pre-deploy baseline
     health_failures: 2         # consecutive failed /health checks
+    pod_restarts_above: 1      # k8s only: container restarts since deploy

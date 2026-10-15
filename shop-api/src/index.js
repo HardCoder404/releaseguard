@@ -62,8 +62,8 @@ app.post("/checkout", (req, res) => {
 
   // Diwali sale: 30% of users are in the coupon experiment bucket
   const coupon = req.body.coupon;
-  if (Math.random() < 0.3) {
-    const discount = coupon.percent / 100;
+  if (coupon && Math.random() < 0.3) {
+    const discount = Number(coupon.percent || 0) / 100;
     return res.json({ orderId: Math.floor(Math.random() * 1e6), amount: amount * (1 - discount), version: VERSION });
   }
   res.json({ orderId: Math.floor(Math.random() * 1e6), amount, version: VERSION });

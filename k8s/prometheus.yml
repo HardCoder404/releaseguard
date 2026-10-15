@@ -1,0 +1,67 @@
+# In-cluster Prometheus. Discovers shop-api pods by label and scrapes them.
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: prometheus }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: { name: prometheus }
+rules:
+  - apiGroups: [""]
+    resources: [pods, nodes, services, endpoints]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: { name: prometheus }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: prometheus }
+subjects: [{ kind: ServiceAccount, name: prometheus, namespace: default }]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: prometheus-config }
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 5s
+    scrape_configs:
+      - job_name: shop-api
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            regex: shop-api
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_container_port_number]
+            regex: "3000"
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: prometheus }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: prometheus } }
+  template:
+    metadata: { labels: { app: prometheus } }
+    spec:
+      serviceAccountName: prometheus
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v2.55.1
+          args: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=1d"]
+          ports: [{ containerPort: 9090 }]
+          volumeMounts: [{ name: config, mountPath: /etc/prometheus }]
+      volumes:
+        - name: config
+          configMap: { name: prometheus-config }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: prometheus }
+spec:
+  type: NodePort
+  selector: { app: prometheus }
+  ports: [{ port: 9090, targetPort: 9090, nodePort: 30090 }]

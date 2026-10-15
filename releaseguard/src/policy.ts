@@ -8,8 +8,10 @@ export interface Decision { proceed: boolean; needsApproval: boolean; why: strin
 export function evaluate(cfg: Config, risk: Risk): Decision {
   const why: string[] = [];
   if (risk.score >= cfg.precheck.risk_threshold) why.push(`risk ${risk.score} >= threshold ${cfg.precheck.risk_threshold}`);
-  if (risk.has_migration) why.push("contains a database migration");
-  if (risk.has_env_change) why.push("changes environment variables");
+  const rules = cfg.precheck.require_approval_if;
+  if (rules.includes("migration") && risk.has_migration) why.push("rule: contains a database migration");
+  if (rules.includes("env_change") && risk.has_env_change) why.push("rule: changes environment variables");
+  if (rules.includes("dependency_change") && risk.has_dependency_change) why.push("rule: changes dependencies");
   return { proceed: why.length === 0, needsApproval: why.length > 0, why: why.join("; ") };
 }
 
