@@ -155,6 +155,33 @@ async function finishCanaryAbort(target: Target, tag: string, from: string | nul
   await notify(`🔴 *Canary ${tag} discarded* on ${target.name}, stable ${from} untouched (${v.reason})\n${why}`);
 }
 
+program.command("precheck <from> <to>")
+  .description("risk analysis only (any git refs), prints markdown; used by CI")
+  .option("--json", "print raw JSON")
+  .action(async (from: string, to: string, o: { json?: boolean }) => {
+    const cfg = loadConfig();
+    const { risk, diff } = await precheck(from, to);
+    if (o.json) return log(JSON.stringify({ risk, files: diff.files }, null, 2));
+    const d = evaluate(cfg, risk);
+    const badge = risk.score >= cfg.precheck.risk_threshold ? "🔴" : risk.score >= 4 ? "🟡" : "🟢";
+    const flags = [risk.has_migration && "migration", risk.has_env_change && "env change", risk.has_dependency_change && "dependency change"].filter(Boolean);
+    log(`### ${badge} ReleaseGuard pre-check: risk ${risk.score}/10\n`);
+    log(`**${risk.summary}**\n`);
+    for (const r of risk.reasons) log(`- ${r}`);
+    if (flags.length) log(`\nFlags: ${flags.join(", ")}`);
+    if (risk.watch_closely?.length) log(`\nWatch closely after deploy: ${risk.watch_closely.map((w) => `\`${w}\``).join(", ")}`);
+    log(`\n${d.needsApproval ? `⚠️ Deploy will **pause for human approval** (${d.why}).` : "✅ Deploy will proceed without manual approval."}`);
+    log(`\n<sub>${diff.files.length} file(s) in shop-api/ changed · ${from.slice(0, 12)} → ${to.slice(0, 12)}</sub>`);
+  });
+
+program.command("serve")
+  .description("history dashboard on http://127.0.0.1:4000")
+  .option("-p, --port <port>", "port", "4000")
+  .action(async (o: { port: string }) => {
+    const { serve } = await import("./serve.js");
+    serve(Number(o.port));
+  });
+
 program.command("rollback").description("manual rollback to previous version").option("--target <name>").action(async (o: { target?: string }) => {
   const t = pickTarget(loadConfig(o.target)); const out = t.rollback(); log(out); await notify(`↩️ manual: ${out}`);
 });
