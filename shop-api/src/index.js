@@ -66,10 +66,19 @@ app.get("/products/:id", (req, res) => {
   res.json(product);
 });
 
-app.post("/checkout", (req, res) => {
+// fraud screening before we accept an order (simulated external call)
+async function fraudCheck(order) {
+  await new Promise((r) => setTimeout(r, 1500)); // the vendor's sandbox is slow
+  return { ok: true, score: Math.random() };
+}
+
+app.post("/checkout", async (req, res) => {
   const { productId = 1, qty = 1 } = req.body || {};
   const product = products.find((p) => p.id === Number(productId));
   if (!product) return res.status(404).json({ error: "product not found" });
+
+  const fraud = await fraudCheck({ productId, qty });
+  if (!fraud.ok) return res.status(403).json({ error: "order declined" });
 
   const amount = product.price * Number(qty);
 
