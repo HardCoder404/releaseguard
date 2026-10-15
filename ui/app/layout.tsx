@@ -13,7 +13,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${inter.variable} ${jet.variable}`}>
       <body className="min-h-screen antialiased">
         <Nav />
-        <main className="mx-auto max-w-6xl px-5 py-7">{children}</main>
+        <main className="mx-auto max-w-6xl px-5 py-7 rise">{children}</main>
       </body>
     </html>
   );
