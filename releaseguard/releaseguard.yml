@@ -3,15 +3,15 @@ target: k8s                    # docker | k8s   (override per run: --target dock
 
 docker:
   urls:
-    app: http://localhost:3001
-    prometheus: http://localhost:9090
+    app: http://127.0.0.1:3001
+    prometheus: http://127.0.0.1:9090
 
 k8s:
   deployment: shop-api
   namespace: default
   urls:
-    app: http://localhost:30080
-    prometheus: http://localhost:30090
+    app: http://127.0.0.1:30080
+    prometheus: http://127.0.0.1:30090
 
 precheck:
   risk_threshold: 7            # score >= this -> ask a human before deploying

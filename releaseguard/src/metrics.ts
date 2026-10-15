@@ -15,7 +15,9 @@ export interface Sample {
 const WINDOW = "30s";
 
 async function promQL(base: string, q: string): Promise<number | null> {
-  const res = await fetch(`${base}/api/v1/query?query=${encodeURIComponent(q)}`);
+  let res: Response;
+  try { res = await fetch(`${base}/api/v1/query?query=${encodeURIComponent(q)}`, { signal: AbortSignal.timeout(5000) }); }
+  catch { return null; }   // Prometheus unreachable or slow: treat as "no data", the health probe still runs
   const j = (await res.json()) as { data: { result: { value: [number, string] }[] } };
   const v = j.data.result[0]?.value?.[1];
   if (v === undefined) return null;
