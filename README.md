@@ -21,6 +21,8 @@ Every step in that story is manual work around the deploy, not the deploy itself
 
 ## What it does
 
+![ReleaseGuard workflow: pre-check, policy gate, canary, watch, then promote or discard](docs/workflow.gif)
+
 ```
 ./rg deploy v2.3.0
          │
