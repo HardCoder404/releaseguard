@@ -82,6 +82,7 @@ app.post("/checkout", async (req, res) => {
   const fraud = await fraudCheck({ productId, qty });
   if (!fraud.ok) return res.status(403).json({ error: "order declined" });
 
+  if (Number(qty) < 1 || Number(qty) > 10) return res.status(400).json({ error: "qty must be 1-10" });
   const amount = product.price * Number(qty);
 
   // Diwali sale: 30% of users are in the coupon experiment bucket
