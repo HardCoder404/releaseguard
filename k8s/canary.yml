@@ -1,0 +1,28 @@
+# Canary: 1 pod of the NEW version, behind the same Service as the stable pods.
+# With 2 stable pods + 1 canary, roughly 1/3 of traffic hits the new version.
+# ReleaseGuard fills in IMAGE_TAG, applies this, watches only track="canary", then promotes or deletes it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shop-api-canary
+  labels: { app: shop-api, track: canary }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: shop-api, track: canary }
+  template:
+    metadata:
+      labels: { app: shop-api, track: canary }
+    spec:
+      containers:
+        - name: app
+          image: shop-api:IMAGE_TAG
+          imagePullPolicy: Never
+          envFrom: [{ configMapRef: { name: shop-api-config } }]
+          ports: [{ containerPort: 3000, name: http }]
+          readinessProbe:
+            httpGet: { path: /health, port: 3000 }
+            periodSeconds: 3
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }

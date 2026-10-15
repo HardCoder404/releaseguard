@@ -1,0 +1,7 @@
+# App configuration lives in the cluster, not in the image. v2.1.0 needed this and crashed without it.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shop-api-config
+data:
+  PAYMENT_GATEWAY_URL: "https://payments.example.internal"

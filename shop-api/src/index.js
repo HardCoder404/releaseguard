@@ -60,6 +60,12 @@ app.get("/products", (_req, res) => {
   res.json(products);
 });
 
+app.get("/products/:id", (req, res) => {
+  const product = products.find((p) => p.id === Number(req.params.id));
+  if (!product) return res.status(404).json({ error: "product not found" });
+  res.json(product);
+});
+
 app.post("/checkout", (req, res) => {
   const { productId = 1, qty = 1 } = req.body || {};
   const product = products.find((p) => p.id === Number(productId));

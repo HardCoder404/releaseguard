@@ -14,7 +14,7 @@ export interface Config {
   target: TargetName;
   urls: Urls;                      // resolved from the active target
   docker: { urls: Urls };
-  k8s: { deployment: string; namespace: string; urls: Urls };
+  k8s: { deployment: string; namespace: string; urls: Urls; canary: boolean };
   precheck: { risk_threshold: number; require_approval_if: string[] };
   watch: {
     window_seconds: number;

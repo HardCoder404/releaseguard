@@ -37,6 +37,8 @@ data:
             action: keep
           - source_labels: [__meta_kubernetes_pod_name]
             target_label: pod
+          - source_labels: [__meta_kubernetes_pod_label_track]
+            target_label: track
 ---
 apiVersion: apps/v1
 kind: Deployment

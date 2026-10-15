@@ -9,6 +9,7 @@ docker:
 k8s:
   deployment: shop-api
   namespace: default
+  canary: true                 # new version goes to 1 extra pod first; --no-canary for a plain rolling update
   urls:
     app: http://127.0.0.1:30080
     prometheus: http://127.0.0.1:30090

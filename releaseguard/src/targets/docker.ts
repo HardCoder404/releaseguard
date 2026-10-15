@@ -14,4 +14,5 @@ export const dockerTarget: Target = {
   current: () => read("current"),
   deploy: (tag) => sh("deploy.sh", [tag]),
   rollback: () => sh("rollback.sh"),
+  scope: { label: "app", selector: "" },
 };
