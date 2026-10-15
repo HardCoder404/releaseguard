@@ -1,55 +1,88 @@
-// Tiny read-only dashboard over the audit log. No framework, one HTML page + one JSON endpoint.
+// Dashboard server: JSON API + live events (SSE) + the static Next.js build in ui/out.
+// The CLI never talks to this process; both read and write the same SQLite file.
 import http from "node:http";
-import { history, type DeployRow } from "./db.js";
+import fs from "node:fs";
+import path from "node:path";
+import { ROOT, loadConfig, saveConfig } from "./config.js";
+import { pickTarget } from "./targets/index.js";
+import { baseline } from "./watch.js";
+import * as db from "./db.js";
 
-const esc = (s: unknown) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
-const ICON: Record<string, string> = { live: "✅", rolled_back: "🔴", canary_aborted: "🐤🔴", blocked: "⛔", aborted: "…" };
+const UI = path.join(ROOT, "ui", "out");
+const MIME: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".png": "image/png", ".svg": "image/svg+xml", ".ico": "image/x-icon", ".woff2": "font/woff2", ".txt": "text/plain", ".gif": "image/gif" };
 
-function page(rows: DeployRow[]): string {
-  const live = rows.filter((r) => r.result === "live").length;
-  const caught = rows.filter((r) => r.result === "rolled_back" || r.result === "canary_aborted").length;
-  const tr = rows.map((r) => {
-    const samples = r.samples ? (JSON.parse(r.samples) as { errorRate: number; p95ms: number | null }[]) : [];
-    const last = samples.at(-1);
-    return `<tr class="${esc(r.result)}">
-      <td>${ICON[r.result ?? ""] ?? "…"} ${esc(r.result ?? "running")}</td>
-      <td class="mono">${esc(r.started_at.slice(0, 16).replace("T", " "))}</td>
-      <td class="mono">${esc(r.previous ?? "-")} → <b>${esc(r.version)}</b></td>
-      <td><span class="risk r${r.risk_score ?? 0}">${r.risk_score ?? "-"}/10</span></td>
-      <td class="mono">${last ? `err ${(last.errorRate * 100).toFixed(1)}% · p95 ${last.p95ms ?? "-"}ms · ${samples.length} samples` : "-"}</td>
-      <td class="reason"><details><summary>${esc((r.reason ?? "").split("\n")[0].slice(0, 90))}</summary><pre>${esc(r.reason)}</pre>${r.risk_summary ? `<p><b>Pre-check:</b> ${esc(r.risk_summary)}</p>` : ""}</details></td>
-    </tr>`;
-  }).join("");
-  return `<!doctype html><html><head><meta charset="utf-8"><title>ReleaseGuard</title>
-<meta http-equiv="refresh" content="10">
-<style>
-:root{--bg:#0f1115;--card:#171a21;--fg:#e6e6e6;--mut:#8b93a7;--ok:#2ecc71;--bad:#ff5a5f;--warn:#f5b942}
-body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 -apple-system,Segoe UI,Inter,sans-serif;padding:32px}
-h1{margin:0 0 4px;font-size:22px}.sub{color:var(--mut);margin-bottom:24px}
-.stats{display:flex;gap:16px;margin-bottom:24px}.stat{background:var(--card);padding:14px 18px;border-radius:10px;min-width:140px}
-.stat b{display:block;font-size:26px}.stat span{color:var(--mut);font-size:12px}
-table{width:100%;border-collapse:collapse;background:var(--card);border-radius:10px;overflow:hidden}
-th,td{padding:10px 12px;text-align:left;vertical-align:top;border-bottom:1px solid #22262f}th{color:var(--mut);font-weight:500;font-size:12px}
-.mono{font-family:ui-monospace,Menlo,monospace;font-size:12.5px}.reason{max-width:520px}
-summary{cursor:pointer;color:#cfd4e0}pre{white-space:pre-wrap;font-size:12px;color:var(--mut);margin:8px 0}
-.risk{padding:2px 8px;border-radius:999px;font-size:12px;background:#2a2f3a}
-.r7,.r8,.r9,.r10{background:#3a1f22;color:var(--bad)}.r4,.r5,.r6{background:#3a331f;color:var(--warn)}.r1,.r2,.r3{background:#1f3a2a;color:var(--ok)}
-tr.rolled_back td:first-child,tr.canary_aborted td:first-child{color:var(--bad)}tr.live td:first-child{color:var(--ok)}
-</style></head><body>
-<h1>ReleaseGuard</h1><div class="sub">Every deploy decision, with the reason. Auto-refreshes every 10s.</div>
-<div class="stats">
-<div class="stat"><b>${rows.length}</b><span>deploys</span></div>
-<div class="stat"><b style="color:var(--ok)">${live}</b><span>went live</span></div>
-<div class="stat"><b style="color:var(--bad)">${caught}</b><span>caught &amp; reverted</span></div>
-</div>
-<table><thead><tr><th>Result</th><th>When</th><th>Version</th><th>Risk</th><th>Last sample</th><th>Why</th></tr></thead><tbody>${tr}</tbody></table>
-</body></html>`;
+const json = (res: http.ServerResponse, code: number, body: unknown) => {
+  res.writeHead(code, { "content-type": "application/json", "access-control-allow-origin": "*" });
+  res.end(JSON.stringify(body));
+};
+const readBody = (req: http.IncomingMessage) => new Promise<string>((r) => { let b = ""; req.on("data", (c) => (b += c)); req.on("end", () => r(b)); });
+
+function deploymentView(row: db.DeployRow) {
+  return { ...row, risk_reasons: row.risk_reasons ? JSON.parse(row.risk_reasons) : [], samples: row.samples ? JSON.parse(row.samples) : [] };
+}
+
+async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<boolean> {
+  const p = url.pathname;
+  if (req.method === "OPTIONS") { res.writeHead(204, { "access-control-allow-origin": "*", "access-control-allow-methods": "GET,POST,PUT", "access-control-allow-headers": "content-type" }); res.end(); return true; }
+
+  if (p === "/api/deployments") return json(res, 200, db.history(Number(url.searchParams.get("limit") ?? 100)).map(deploymentView)), true;
+  if (p === "/api/deployments/latest") { const d = db.latestDeployment(); return json(res, 200, d ? { ...deploymentView(d), events: db.eventsFor(d.id).map(ev) } : null), true; }
+  const m = p.match(/^\/api\/deployments\/(\d+)$/);
+  if (m) { const d = db.deployment(Number(m[1])); return d ? (json(res, 200, { ...deploymentView(d), events: db.eventsFor(d.id).map(ev) }), true) : (json(res, 404, { error: "not found" }), true); }
+
+  if (p === "/api/events") {               // Server-Sent Events: everything the CLI writes, as it happens
+    let last = Number(url.searchParams.get("since") ?? 0);
+    if (!url.searchParams.has("since")) { const l = db.eventsSince(0, 100000); last = l.length ? l[l.length - 1].id : 0; }
+    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive", "access-control-allow-origin": "*" });
+    res.write(`retry: 2000\n\n`);
+    const tick = () => {
+      for (const e of db.eventsSince(last)) { last = e.id; res.write(`id: ${e.id}\nevent: ${e.type}\ndata: ${JSON.stringify(ev(e))}\n\n`); }
+    };
+    tick();
+    const timer = setInterval(() => { tick(); res.write(`: ping\n\n`); }, 1000);
+    req.on("close", () => clearInterval(timer));
+    return true;
+  }
+
+  if (p === "/api/approvals") return json(res, 200, db.pendingApprovals().map((a) => ({ ...a, risk_reasons: a.risk_reasons ? JSON.parse(a.risk_reasons) : [] }))), true;
+  const a = p.match(/^\/api\/approvals\/(\d+)\/(approve|reject)$/);
+  if (a && req.method === "POST") {
+    const body = JSON.parse((await readBody(req)) || "{}") as { by?: string };
+    const ok = db.decideApproval(Number(a[1]), a[2] === "approve" ? "approved" : "rejected", `dashboard${body.by ? ` (${body.by})` : ""}`);
+    return json(res, ok ? 200 : 409, { ok, status: ok ? a[2] : "already decided" }), true;
+  }
+
+  if (p === "/api/config" && req.method === "GET") { const c = loadConfig(); return json(res, 200, { target: c.target, k8s: { canary: c.k8s.canary, deployment: c.k8s.deployment }, precheck: c.precheck, watch: c.watch }), true; }
+  if (p === "/api/config" && req.method === "PUT") {
+    try { const c = saveConfig(JSON.parse(await readBody(req))); return json(res, 200, { ok: true, precheck: c.precheck, watch: c.watch, k8s: { canary: c.k8s.canary } }), true; }
+    catch (e) { return json(res, 400, { error: (e as Error).message }), true; }
+  }
+
+  if (p === "/api/status") {
+    try { const cfg = loadConfig(); const t = pickTarget(cfg); const s = await baseline(cfg, t.scope); return json(res, 200, { target: t.name, running: t.current(), healthy: s.healthy, rps: s.rps, errorRate: s.errorRate, p95ms: s.p95ms, pods: s.pods ?? null }), true; }
+    catch (e) { return json(res, 200, { target: null, running: null, error: (e as Error).message }), true; }
+  }
+  if (p.startsWith("/api/")) return json(res, 404, { error: "unknown endpoint" }), true;
+  return false;
+}
+
+const ev = (e: db.EventRow) => ({ id: e.id, deployment_id: e.deployment_id, at: e.at, type: e.type, ...JSON.parse(e.data) });
+
+function staticFile(res: http.ServerResponse, url: URL) {
+  if (!fs.existsSync(UI)) { res.writeHead(200, { "content-type": "text/html" }); return res.end(`<pre style="font:14px Menlo;padding:24px">ReleaseGuard API is up. The dashboard is not built yet:\n\n  cd ui && npm install && npm run build\n\nthen reload.</pre>`); }
+  let file = path.join(UI, decodeURIComponent(url.pathname));
+  if (!file.startsWith(UI)) { res.writeHead(403); return res.end(); }
+  if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, "index.html");
+  if (!fs.existsSync(file) && fs.existsSync(file + ".html")) file = file + ".html";
+  if (!fs.existsSync(file)) file = path.join(UI, "index.html");
+  res.writeHead(200, { "content-type": MIME[path.extname(file)] ?? "application/octet-stream", "cache-control": file.includes("/_next/static/") ? "public, max-age=31536000, immutable" : "no-cache" });
+  fs.createReadStream(file).pipe(res);
 }
 
 export function serve(port: number) {
-  http.createServer((req, res) => {
-    const rows = history(100);
-    if (req.url?.startsWith("/api")) { res.writeHead(200, { "content-type": "application/json" }); return res.end(JSON.stringify(rows)); }
-    res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(page(rows));
+  http.createServer(async (req, res) => {
+    const url = new URL(req.url ?? "/", "http://x");
+    try { if (await api(req, res, url)) return; } catch (e) { return json(res, 500, { error: (e as Error).message }); }
+    staticFile(res, url);
   }).listen(port, "127.0.0.1", () => console.log(`ReleaseGuard dashboard → http://127.0.0.1:${port}`));
 }

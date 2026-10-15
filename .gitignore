@@ -8,3 +8,5 @@ infra/state/
 
 # local scratch
 notes/
+ui/out/
+ui/.next/

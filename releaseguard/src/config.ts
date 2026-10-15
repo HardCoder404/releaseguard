@@ -38,6 +38,22 @@ export function loadConfig(targetOverride?: string): Config {
   return cfg;
 }
 
+/** Dashboard "Policy" page writes here. Comments in the YAML are preserved. */
+export function saveConfig(patch: { precheck?: Partial<Config["precheck"]>; watch?: Partial<Omit<Config["watch"], "rollback_if">> & { rollback_if?: Partial<Config["watch"]["rollback_if"]> }; k8s?: { canary?: boolean } }): Config {
+  const file = path.join(ROOT, "releaseguard", "releaseguard.yml");
+  const doc = YAML.parseDocument(fs.readFileSync(file, "utf8"));
+  const set = (keys: string[], v: unknown) => { if (v !== undefined) doc.setIn(keys, v); };
+  set(["precheck", "risk_threshold"], patch.precheck?.risk_threshold);
+  set(["precheck", "require_approval_if"], patch.precheck?.require_approval_if);
+  set(["watch", "window_seconds"], patch.watch?.window_seconds);
+  set(["watch", "interval_seconds"], patch.watch?.interval_seconds);
+  for (const k of ["error_rate_above", "p95_latency_above_ms", "p95_latency_factor", "health_failures", "pod_restarts_above"] as const)
+    set(["watch", "rollback_if", k], patch.watch?.rollback_if?.[k]);
+  set(["k8s", "canary"], patch.k8s?.canary);
+  fs.writeFileSync(file, doc.toString());
+  return loadConfig();
+}
+
 export const env = {
   groqKey: process.env.GROQ_API_KEY ?? "",
   groqModel: process.env.GROQ_MODEL ?? "openai/gpt-oss-120b",

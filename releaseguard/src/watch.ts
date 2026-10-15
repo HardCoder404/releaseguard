@@ -4,6 +4,7 @@ import { sample, type Sample } from "./metrics.js";
 import type { Scope } from "./targets/types.js";
 
 export interface Verdict { ok: boolean; reason: string; samples: Sample[]; baseline: Sample }
+export interface WatchHooks { log: (s: string) => void; onSample?: (s: Sample, compare: Sample | null, secondsLeft: number) => void }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
@@ -13,8 +14,9 @@ export async function baseline(cfg: Config, scope: Scope): Promise<Sample> {
 }
 
 /** Watch `scope`; if `compare` is given, its numbers are printed next to it (canary vs stable). */
-export async function watch(cfg: Config, base: Sample, scope: Scope, log: (s: string) => void, compare?: Scope): Promise<Verdict> {
+export async function watch(cfg: Config, base: Sample, scope: Scope, hooks: WatchHooks, compare?: Scope): Promise<Verdict> {
   const { window_seconds, interval_seconds, rollback_if: r } = cfg.watch;
+  const { log } = hooks;
   const samples: Sample[] = [];
   let healthFails = 0;
   const deadline = Date.now() + window_seconds * 1000;
@@ -24,6 +26,7 @@ export async function watch(cfg: Config, base: Sample, scope: Scope, log: (s: st
     const [s, c] = await Promise.all([sample(cfg, scope), compare ? sample(cfg, compare) : Promise.resolve(null)]);
     samples.push(s);
     const left = Math.max(0, Math.round((deadline - Date.now()) / 1000));
+    hooks.onSample?.(s, c, left);
     const podInfo = s.pods ? `  pods ${s.pods.ready}/${s.pods.desired} restarts ${s.pods.restarts}` : "";
     const cmp = c ? `  | ${compare!.label}: err ${pct(c.errorRate)} p95 ${c.p95ms ?? "-"}ms` : "";
     log(`  ${s.healthy ? "✓" : "✗"} ${scope.label}: rps ${s.rps.toFixed(1)}  err ${pct(s.errorRate)}  p95 ${s.p95ms ?? "-"}ms${podInfo}${cmp}  (${left}s left)`);

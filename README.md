@@ -63,9 +63,20 @@ The pre-check flagged every one of the bad releases at 7-8/10 before anything wa
 
 ## Dashboard
 
-![audit log dashboard](docs/dashboard.png)
+`./rg serve` hosts a small Next.js dashboard (static export, 107 KB first load) next to the JSON API.
 
-`./rg serve` shows every decision with the risk score, the last metrics sample and the full explanation. Everything is in a local SQLite file; `./rg history` prints the same in the terminal.
+![live deploy view: steps, canary vs stable charts, verdict](docs/ui-live.png)
+
+- **Live** follows the running deploy: the four steps light up as the CLI reports them, the charts plot canary against stable every 10 s with the rollback limits drawn in, and the verdict and incident note appear the moment they exist. The CLI writes every step, log line and sample to the audit database; the server streams them to the browser over Server-Sent Events.
+- **Approvals** lists deploys the policy gate is holding, with the risk score and reasons. Approve or reject from the browser or the terminal, whichever answers first. The decision and who made it land in the audit log.
+- **History** is every decision with the reason, filterable, with time-to-detect across caught releases.
+- **Policy** edits the thresholds in `releaseguard.yml` from a form. Comments in the file survive the round trip.
+
+<p>
+<img src="docs/ui-approvals.png" width="49%" alt="approvals"> <img src="docs/ui-policy.png" width="49%" alt="policy">
+</p>
+
+The CLI and the dashboard never talk to each other directly: both read and write the same SQLite file, so a deploy keeps working with the dashboard down, and the dashboard can follow a deploy started from any terminal.
 
 ## CI
 
@@ -89,7 +100,10 @@ minikube start --driver=docker --ports=30080:30080,30090:30090
 kubectl apply -f k8s/
 ./rg deploy v2.3.0 --traffic                           # watch the canary get discarded
 ./rg deploy v2.3.1 --traffic                           # watch it get promoted
-./rg serve                                             # dashboard on :4000
+
+# Dashboard
+(cd ui && npm install && npm run build)                # once
+./rg serve                                             # http://127.0.0.1:4000
 ```
 
 `--traffic` runs a small load generator so the metrics have something to show. Without it the watcher tells you the verdict is weak.
@@ -102,7 +116,8 @@ kubectl apply -f k8s/
 | `./rg precheck <ref> <ref>` | risk analysis only, prints markdown (used by CI) |
 | `./rg status` | what is running, current metrics |
 | `./rg rollback` | manual rollback |
-| `./rg history` / `./rg serve` | audit log, terminal or browser |
+| `./rg history` | audit log in the terminal |
+| `./rg serve [-p 4000]` | dashboard + JSON API (`/api/deployments`, `/api/events` SSE, `/api/approvals`, `/api/config`) |
 
 ### Configuration
 
@@ -142,18 +157,20 @@ releaseguard/
 │   ├── targets/         docker.ts, k8s.ts: same interface, different kubectl/docker calls
 │   ├── explain.ts       numbers + diff + pod logs → incident note
 │   ├── notify.ts        Slack webhook
-│   ├── db.ts            SQLite audit log (node:sqlite, no native deps)
-│   └── serve.ts         dashboard
+│   ├── db.ts            SQLite: audit log, live events, approvals (node:sqlite, no native deps)
+│   └── serve.ts         JSON API + SSE + static hosting of the dashboard
+├── ui/                  Next.js dashboard (app router, Tailwind, static export, no chart library)
 └── .github/workflows/   pre-check on PRs
 ```
 
-Stack: TypeScript, Node, Docker, Kubernetes (minikube), Prometheus, Groq (`openai/gpt-oss-120b`), Slack webhooks, SQLite. Zero paid services.
+Stack: TypeScript, Node, Next.js, Docker, Kubernetes (minikube), Prometheus, Groq (`openai/gpt-oss-120b`), Slack webhooks, SQLite. Zero paid services.
 
 **Design notes**
 
 - *Canary over rolling update.* A rolling update replaces all pods; if the new version is bad, users are already on it. A canary exposes roughly a third of traffic, and a bad canary is deleted rather than rolled back, so stable pods never change.
 - *Scoped metrics.* Prometheus carries a `track` label (`stable` / `canary`) from the pod labels, so the watcher compares the canary to the stable pods side by side instead of to a global average that the stable pods would dilute.
 - *Heuristics under the model.* File-name and diff patterns (migrations, `process.env`, lockfiles) set a floor on the score, so a risky change is never under-reported because the model had a bad day.
+- *The database is the bus.* The CLI is a short-lived process; the dashboard is a long-lived one. Instead of sockets between them, the CLI appends events and the server tails the table. Approvals work the same way in reverse, which is why a deploy can be approved from a phone while the terminal is still waiting.
 - *Rollout failures are a first-class path.* If the new pods never become ready, `kubectl rollout status` times out, ReleaseGuard reads the crashing pod's logs, undoes the rollout and includes the log line in the explanation.
 
 ## Limitations and next steps
