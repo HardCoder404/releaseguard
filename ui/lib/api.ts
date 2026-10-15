@@ -75,11 +75,11 @@ export function useEvents(onEvent: (e: Event) => void, since?: number) {
 export const fmtPct = (x: number | undefined | null) => x === undefined || x === null ? "–" : `${(x * 100).toFixed(1)}%`;
 export const fmtMs = (x: number | undefined | null) => x === undefined || x === null ? "–" : `${x} ms`;
 export const fmtTime = (iso: string) => new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-export const resultMeta: Record<string, { label: string; cls: string; icon: string }> = {
-  live: { label: "live", cls: "text-ok bg-ok/10 border-ok/30", icon: "✓" },
-  rolled_back: { label: "rolled back", cls: "text-bad bg-bad/10 border-bad/30", icon: "↩" },
-  canary_aborted: { label: "canary discarded", cls: "text-bad bg-bad/10 border-bad/30", icon: "✗" },
-  blocked: { label: "blocked", cls: "text-warn bg-warn/10 border-warn/30", icon: "⛔" },
-  aborted: { label: "aborted", cls: "text-mut bg-panel2 border-line", icon: "…" },
-  running: { label: "running", cls: "text-blue bg-blue/10 border-blue/30", icon: "●" },
+export const resultMeta: Record<string, { label: string; pill: string }> = {
+  live: { label: "live", pill: "pill-ok" },
+  rolled_back: { label: "rolled back", pill: "pill-bad" },
+  canary_aborted: { label: "canary discarded", pill: "pill-bad" },
+  blocked: { label: "blocked", pill: "pill-warn" },
+  aborted: { label: "aborted", pill: "pill-mut" },
+  running: { label: "running", pill: "pill-blue" },
 };
