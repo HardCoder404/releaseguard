@@ -136,8 +136,8 @@ async function canaryFlow(cfg: ReturnType<typeof loadConfig>, target: Target, ta
     return;
   }
   const last = v.samples.at(-1);
-  db.finish(id, "live", `canary ${v.reason}, promoted`, v.samples);
-  log(`\n✅ ${tag} is live on all pods (canary ${v.reason}, promoted)`);
+  db.finish(id, "live", `${v.reason}, promoted`, v.samples);
+  log(`\n✅ ${tag} is live on all pods (${v.reason}, promoted)`);
   await notify(`✅ *${tag}* promoted to all pods on ${target.name}. Canary ${v.reason}: err ${pct(last?.errorRate ?? 0)}, p95 ${last?.p95ms ?? "-"}ms.`);
 }
 
